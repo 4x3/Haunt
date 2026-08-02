@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 
-import { bodyRender, skinFile } from '../lib/renders.js';
+import { bodyRender, skinDownload } from '../lib/renders.js';
 import { respond } from '../lib/respond.js';
 import { resolveTarget } from '../lib/target.js';
 
@@ -21,7 +21,7 @@ export async function execute(interaction) {
     .setImage(bodyRender(profile.uuidDashed))
     .addFields(
       { name: 'Model', value: profile.skinModel === 'slim' ? 'Slim (Alex)' : 'Classic (Steve)', inline: true },
-      { name: 'Download', value: `[Skin file](${skinFile(profile.uuidDashed)})`, inline: true },
+      { name: 'Download', value: `[Skin file](${skinDownload(profile.uuidDashed)})`, inline: true },
     )
     .setTimestamp();
 
