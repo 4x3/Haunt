@@ -1,42 +1,44 @@
 import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 
+import { count } from '../lib/format.js';
+import { networkLevel, requirePlayer } from '../lib/hypixel.js';
+import { respond } from '../lib/respond.js';
+
 export const data = new SlashCommandBuilder()
   .setName('level')
-  .setDescription('Shows the Hypixel level of a player')
+  .setDescription('Shows the Hypixel network level of a player')
   .addStringOption(option =>
     option.setName('username')
       .setDescription('Minecraft username')
       .setRequired(true));
 
+// Inverse of networkLevel: total XP required to reach the given level.
+function xpForLevel(level) {
+  return 1250 * level ** 2 + 6250 * level - 7500;
+}
+
 export async function execute(interaction) {
   const username = interaction.options.getString('username');
+  const { profile, player } = await requirePlayer(username);
 
-  // Hypixel API key from environment variables
-  const hypixelApiKey = process.env.HYPIXEL_API_KEY;
-  const fetch = (await import('node-fetch')).default;
+  const exp = player.networkExp ?? 0;
+  const exact = networkLevel(exp);
+  const level = Math.floor(exact);
+  const toNextLevel = Math.max(0, Math.ceil(xpForLevel(level + 1) - exp));
 
-  try {
-    // Fetch player data from Hypixel API
-    const res = await fetch(`https://api.hypixel.net/player?key=${hypixelApiKey}&name=${username}`);
-    const data = await res.json();
+  const embed = new EmbedBuilder()
+    .setTitle(`Hypixel level for ${profile.name}`)
+    .setColor(0x36056E)
+    .setThumbnail(`https://mc-heads.net/avatar/${profile.uuid}/64`)
+    .addFields(
+      { name: 'Level', value: `${level}`, inline: true },
+      { name: 'Progress', value: `${Math.round((exact - level) * 100)}%`, inline: true },
+      { name: 'Network XP', value: count(exp), inline: true },
+      { name: 'XP to next level', value: count(toNextLevel), inline: true },
+      { name: 'Karma', value: count(player.karma), inline: true },
+      { name: 'Achievement Points', value: count(player.achievementPoints), inline: true },
+    )
+    .setTimestamp();
 
-    if (!data.player) {
-      return interaction.reply({ content: `Player **${username}** not found on Hypixel.`, ephemeral: true });
-    }
-
-    // Calculate Hypixel level based on networkExp
-    const exp = data.player.networkExp || 0;
-    const level = Math.floor((Math.sqrt(2 * exp + 30625) / 50) - 2.5);
-
-    const embed = new EmbedBuilder()
-      .setTitle(`${username}'s Hypixel Level`)
-      .setDescription(`**Level:** ${level}`)
-      .setColor(0x36056E)
-      .setTimestamp();
-
-    await interaction.reply({ embeds: [embed] });
-  } catch (error) {
-    console.error(error);
-    await interaction.reply({ content: 'Error fetching Hypixel level.', ephemeral: true });
-  }
+  await respond(interaction, { embeds: [embed] });
 }

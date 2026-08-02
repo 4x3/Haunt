@@ -1,33 +1,33 @@
 import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
-import fetch from 'node-fetch';
+
+import { resolveProfile } from '../lib/mojang.js';
+import { respond } from '../lib/respond.js';
 
 export const data = new SlashCommandBuilder()
   .setName('uuid')
-  .setDescription('Get Minecraft UUID for a username')
+  .setDescription('Get the Minecraft UUID for a username')
   .addStringOption(option =>
     option.setName('username')
       .setDescription('Minecraft username')
       .setRequired(true));
 
+function dashed(uuid) {
+  return uuid.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, '$1-$2-$3-$4-$5');
+}
+
 export async function execute(interaction) {
   const username = interaction.options.getString('username');
+  const profile = await resolveProfile(username);
 
-  try {
-    const response = await fetch(`https://api.mojang.com/users/profiles/minecraft/${username}`);
-    if (!response.ok) {
-      return await interaction.reply({ content: `No user found with username: ${username}`, ephemeral: true });
-    }
-    const data = await response.json();
+  const embed = new EmbedBuilder()
+    .setTitle(`UUID for ${profile.name}`)
+    .setColor(0x36056E)
+    .setThumbnail(`https://mc-heads.net/avatar/${profile.uuid}/64`)
+    .addFields(
+      { name: 'Trimmed', value: `\`${profile.uuid}\`` },
+      { name: 'Dashed', value: `\`${dashed(profile.uuid)}\`` },
+    )
+    .setTimestamp();
 
-    const embed = new EmbedBuilder()
-      .setTitle(`UUID for ${username}`)
-      .setDescription(`\`${data.id}\``)
-      .setColor(0x36056E)
-      .setTimestamp();
-
-    await interaction.reply({ embeds: [embed] });
-  } catch (error) {
-    console.error(error);
-    await interaction.reply({ content: 'Error fetching UUID.', ephemeral: true });
-  }
+  await respond(interaction, { embeds: [embed] });
 }

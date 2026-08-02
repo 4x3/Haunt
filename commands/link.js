@@ -1,14 +1,9 @@
 import { SlashCommandBuilder } from 'discord.js';
-import fetch from 'node-fetch';
-import fs from 'fs';
-import path from 'path';
 
-// Simple JSON file to store links (replace with real DB in production)
-const linksFile = path.resolve('./links.json');
-let links = {};
-if (fs.existsSync(linksFile)) {
-  links = JSON.parse(fs.readFileSync(linksFile));
-}
+import { UserError } from '../lib/errors.js';
+import { requirePlayer } from '../lib/hypixel.js';
+import { getLinkByUuid, saveLink } from '../lib/links.js';
+import { respond } from '../lib/respond.js';
 
 export const data = new SlashCommandBuilder()
   .setName('link')
@@ -18,63 +13,37 @@ export const data = new SlashCommandBuilder()
       .setDescription('Your Minecraft username')
       .setRequired(true));
 
+export const ephemeral = true;
+
 export async function execute(interaction) {
   const username = interaction.options.getString('username');
-  const apiKey = process.env.HYPIXEL_API_KEY;
+  const { profile, player } = await requirePlayer(username);
 
-  try {
-    // Get UUID from Mojang API
-    const mojangRes = await fetch(`https://api.mojang.com/users/profiles/minecraft/${username}`);
-    if (!mojangRes.ok) return interaction.reply({ content: `No user found with username: ${username}`, ephemeral: true });
-    const mojangData = await mojangRes.json();
-    const uuid = mojangData.id;
-
-    // Fetch Hypixel player data
-    const hypixelRes = await fetch(`https://api.hypixel.net/player?key=${apiKey}&uuid=${uuid}`);
-    if (!hypixelRes.ok) return interaction.reply({ content: 'Failed to fetch Hypixel data.', ephemeral: true });
-    const hypixelData = await hypixelRes.json();
-
-    if (!hypixelData.player) return interaction.reply({ content: 'No Hypixel player data found.', ephemeral: true });
-
-    const player = hypixelData.player;
-
-    // Get linked Discord from Hypixel socials
-    const linkedDiscordOnHypixel = player.socialMedia?.links?.DISCORD || null;
-
-    // Current user's Discord tag
-    const discordTag = interaction.user.tag; // username#discrim
-
-    if (!linkedDiscordOnHypixel) {
-      return interaction.reply({
-        content: `Mismatched Discord User!\nThe Discord linked on Hypixel does not match your current username!\n\nHypixel: None\nCurrent: ${discordTag}`,
-        ephemeral: true,
-      });
-    }
-
-    // Compare linked Discord (case insensitive) to user's Discord username (not tag, just username)
-    if (!linkedDiscordOnHypixel.toLowerCase().includes(interaction.user.username.toLowerCase())) {
-      return interaction.reply({
-        content: `Mismatched Discord User!\nThe Discord linked on Hypixel does not match your current username!\n\nHypixel: ${linkedDiscordOnHypixel}\nCurrent: ${discordTag}`,
-        ephemeral: true,
-      });
-    }
-
-    // Passed verification, save the link
-    links[interaction.user.id] = {
-      minecraftUsername: username,
-      minecraftUUID: uuid,
-      linkedAt: new Date().toISOString(),
-    };
-
-    fs.writeFileSync(linksFile, JSON.stringify(links, null, 2));
-
-    return interaction.reply({
-      content: `Successfully linked your Discord to Minecraft account **${username}**!`,
-      ephemeral: true,
-    });
-
-  } catch (error) {
-    console.error(error);
-    return interaction.reply({ content: 'Error while linking accounts.', ephemeral: true });
+  const hypixelDiscord = player.socialMedia?.links?.DISCORD;
+  if (!hypixelDiscord) {
+    throw new UserError(
+      `**${profile.name}** has no Discord linked on Hypixel.\n` +
+      'Set it in game with `/profile` \u2192 Social Media \u2192 Discord, then run this again.',
+    );
   }
+
+  // Must match the whole handle. A substring check would let anyone whose name
+  // appears inside the real handle claim the account.
+  if (hypixelDiscord.toLowerCase() !== interaction.user.username.toLowerCase()) {
+    throw new UserError(
+      'That account is linked to a different Discord user.\n' +
+      `Linked on Hypixel: \`${hypixelDiscord}\`\nYou: \`${interaction.user.username}\``,
+    );
+  }
+
+  const existing = getLinkByUuid(profile.uuid);
+  if (existing && existing.discordId !== interaction.user.id) {
+    throw new UserError(`**${profile.name}** is already linked to another Discord account.`);
+  }
+
+  await saveLink(interaction.user.id, { uuid: profile.uuid, name: profile.name });
+
+  await respond(interaction, {
+    content: `Linked your Discord to **${profile.name}**.`,
+  });
 }

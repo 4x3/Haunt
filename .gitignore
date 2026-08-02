@@ -6,6 +6,9 @@ node_modules/
 .env.*
 !.env.example
 
+# Runtime data (account links)
+data/
+
 # Logs
 *.log
 npm-debug.log*

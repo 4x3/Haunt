@@ -1,22 +1,23 @@
-import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
+import { SlashCommandBuilder, EmbedBuilder, MessageFlags } from 'discord.js';
 
 export const data = new SlashCommandBuilder()
   .setName('help')
   .setDescription('Shows all available commands');
 
+export const defer = false;
+
 export async function execute(interaction) {
-  const commands = interaction.client.commands;
+  // Listed in the description rather than as fields, which cap out at 25.
+  const lines = [...interaction.client.commands.values()]
+    .map(command => `**/${command.data.name}** \u2014 ${command.data.description}`)
+    .sort()
+    .join('\n');
 
   const embed = new EmbedBuilder()
-    .setTitle('Available Commands')
+    .setTitle('Haunt commands')
     .setColor(0x36056E)
-    .setDescription('Here are the commands you can use:')
+    .setDescription(lines)
     .setTimestamp();
 
-  // Add each command name and description as a field
-  commands.forEach(cmd => {
-    embed.addFields({ name: `/${cmd.data.name}`, value: cmd.data.description || 'No description', inline: true });
-  });
-
-  await interaction.reply({ embeds: [embed], ephemeral: true });
+  await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
 }

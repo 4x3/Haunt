@@ -1,42 +1,53 @@
 import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
-import fetch from 'node-fetch';
+
+import { UserError } from '../lib/errors.js';
+import { count } from '../lib/format.js';
+import { respond } from '../lib/respond.js';
 
 export const data = new SlashCommandBuilder()
   .setName('server')
-  .setDescription('Get info about a Minecraft server by IP/domain')
+  .setDescription('Get info about a Minecraft server by IP or domain')
   .addStringOption(option =>
     option.setName('ip')
       .setDescription('Minecraft server IP or domain')
       .setRequired(true));
 
+const HOST_PATTERN = /^[a-zA-Z0-9.\-]{1,253}(:\d{1,5})?$/;
+
 export async function execute(interaction) {
-  const ip = interaction.options.getString('ip');
-
-  try {
-    const res = await fetch(`https://api.mcsrvstat.us/2/${ip}`);
-    if (!res.ok) return interaction.reply({ content: 'Failed to fetch server info.', ephemeral: true });
-
-    const data = await res.json();
-
-    if (!data.online) return interaction.reply({ content: `Server ${ip} is offline or does not exist.`, ephemeral: true });
-
-    const embed = new EmbedBuilder()
-      .setTitle(`Minecraft Server Info: ${ip}`)
-      .setColor(0x36056E)
-      .addFields(
-        { name: 'IP', value: data.ip || ip, inline: true },
-        { name: 'Port', value: data.port?.toString() || '25565', inline: true },
-        { name: 'Online Players', value: `${data.players.online} / ${data.players.max}`, inline: true },
-        { name: 'Version', value: data.version || 'Unknown', inline: true },
-        { name: 'MOTD', value: data.motd?.clean?.join('\n') || 'No MOTD' },
-        { name: 'Plugins', value: data.plugins?.names?.join(', ') || 'Unknown' }
-      )
-      .setTimestamp();
-
-    await interaction.reply({ embeds: [embed] });
-
-  } catch (error) {
-    console.error(error);
-    await interaction.reply({ content: 'Error fetching server info.', ephemeral: true });
+  const host = interaction.options.getString('ip');
+  if (!HOST_PATTERN.test(host)) {
+    throw new UserError(`\`${host}\` is not a valid server address.`);
   }
+
+  const res = await fetch(`https://api.mcsrvstat.us/3/${host}`, {
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!res.ok) throw new Error(`mcsrvstat returned ${res.status}`);
+
+  const data = await res.json();
+  if (!data.online) throw new UserError(`**${host}** is offline or does not exist.`);
+
+  const embed = new EmbedBuilder()
+    .setTitle(host)
+    .setColor(0x36056E)
+    .addFields(
+      { name: 'Address', value: `\`${data.ip ?? host}:${data.port ?? 25565}\``, inline: true },
+      {
+        name: 'Players',
+        value: `${count(data.players?.online)} / ${count(data.players?.max)}`,
+        inline: true,
+      },
+      { name: 'Version', value: data.version ?? 'Unknown', inline: true },
+    )
+    .setTimestamp();
+
+  const motd = data.motd?.clean?.join('\n').trim();
+  if (motd) embed.setDescription(motd);
+
+  if (data.icon) {
+    embed.setThumbnail(`https://api.mcsrvstat.us/icon/${host}`);
+  }
+
+  await respond(interaction, { embeds: [embed] });
 }

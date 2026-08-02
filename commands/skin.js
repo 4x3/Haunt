@@ -1,5 +1,8 @@
 import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 
+import { fetchSkinModel, resolveProfile } from '../lib/mojang.js';
+import { respond } from '../lib/respond.js';
+
 export const data = new SlashCommandBuilder()
   .setName('skin')
   .setDescription('Get the Minecraft skin for a username')
@@ -10,22 +13,23 @@ export const data = new SlashCommandBuilder()
 
 export async function execute(interaction) {
   const username = interaction.options.getString('username');
+  const profile = await resolveProfile(username);
+  const model = await fetchSkinModel(profile.uuid);
 
-  // Skin preview URL from Minecraft skins server
-  const skinUrl = `https://mc-heads.net/body/${username}/250`;
-
-  // Direct skin download URL (official Mojang skin server)
-  // Format UUID needed — for simplicity here use username in download link pattern from namemc or mc-heads.net
-  // But to be precise, you’d want UUID; for demo, we'll keep username
-
-  const downloadUrl = `https://mc-heads.net/download/${username}`;
-
+  // Rendered by UUID so a name change can't serve a stale skin.
   const embed = new EmbedBuilder()
-    .setTitle(`Minecraft Skin for ${username}`)
+    .setTitle(`Skin for ${profile.name}`)
     .setColor(0x36056E)
-    .setImage(skinUrl)
-    .setDescription(`[Download Skin](${downloadUrl})`)
+    .setImage(`https://mc-heads.net/body/${profile.uuid}/250`)
+    .addFields(
+      { name: 'Model', value: model === 'slim' ? 'Slim' : 'Classic', inline: true },
+      {
+        name: 'Download',
+        value: `[Skin file](https://mc-heads.net/download/${profile.uuid})`,
+        inline: true,
+      },
+    )
     .setTimestamp();
 
-  await interaction.reply({ embeds: [embed] });
+  await respond(interaction, { embeds: [embed] });
 }

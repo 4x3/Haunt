@@ -1,10 +1,19 @@
-import dotenv from 'dotenv';
-dotenv.config();
+import 'dotenv/config';
 
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { Client, GatewayIntentBits, Collection, ActivityType } from 'discord.js';
+import {
+  Client,
+  Collection,
+  Events,
+  GatewayIntentBits,
+  ActivityType,
+  MessageFlags,
+} from 'discord.js';
+
+import { UserError } from './lib/errors.js';
+import { respondError } from './lib/respond.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -21,43 +30,57 @@ for (const file of commandFiles) {
   client.commands.set(command.data.name, command);
 }
 
-client.once('ready', () => {
-  console.log(`Logged in as ${client.user.tag}!`);
-
-  const activities = [
-    { name: `${client.guilds.cache.size} Servers!`, type: ActivityType.Watching },
-    { name: `${client.users.cache.size} User Installs!`, type: ActivityType.Watching },
+function currentActivities() {
+  const members = client.guilds.cache.reduce((total, guild) => total + guild.memberCount, 0);
+  return [
+    { name: `${client.guilds.cache.size} servers`, type: ActivityType.Watching },
+    { name: `${members.toLocaleString()} players`, type: ActivityType.Watching },
   ];
+}
 
-  let index = 0;
-
-  // Set initial activity and status
-  client.user.setActivity(activities[index].name, { type: activities[index].type });
+client.once(Events.ClientReady, () => {
+  console.log(`Logged in as ${client.user.tag}`);
   client.user.setStatus('online');
 
-  // Rotate status every 15 seconds
-  setInterval(() => {
-    index = (index + 1) % activities.length;
-    client.user.setActivity(activities[index].name, { type: activities[index].type });
-  }, 15000);
+  let index = 0;
+  const rotate = () => {
+    // Rebuilt every tick so the counts track joins and leaves.
+    const activities = currentActivities();
+    const activity = activities[index % activities.length];
+    client.user.setActivity(activity.name, { type: activity.type });
+    index++;
+  };
+
+  rotate();
+  setInterval(rotate, 15000);
 });
 
-client.on('interactionCreate', async interaction => {
-  if (!interaction.isCommand()) return;
+client.on(Events.InteractionCreate, async interaction => {
+  if (!interaction.isChatInputCommand()) return;
 
   const command = client.commands.get(interaction.commandName);
-
   if (!command) return;
 
   try {
+    // Defer up front so slow upstream APIs can't blow the 3 second deadline.
+    // Commands that must own their first reply opt out with `defer = false`.
+    if (command.defer !== false) {
+      await interaction.deferReply(
+        command.ephemeral ? { flags: MessageFlags.Ephemeral } : {},
+      );
+    }
     await command.execute(interaction);
   } catch (error) {
-    console.error(error);
-    if (interaction.replied || interaction.deferred) {
-      await interaction.followUp({ content: 'Error executing command!', ephemeral: true });
-    } else {
-      await interaction.reply({ content: 'Error executing command!', ephemeral: true });
+    if (error instanceof UserError) {
+      await respondError(interaction, error.message).catch(() => {});
+      return;
     }
+
+    console.error(`/${interaction.commandName} failed:`, error);
+    await respondError(
+      interaction,
+      'Something went wrong running that command. Try again in a moment.',
+    ).catch(() => {});
   }
 });
 

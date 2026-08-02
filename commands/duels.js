@@ -1,5 +1,9 @@
 import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
-import fetch from 'node-fetch';
+
+import { UserError } from '../lib/errors.js';
+import { count, ratio } from '../lib/format.js';
+import { requirePlayer } from '../lib/hypixel.js';
+import { respond } from '../lib/respond.js';
 
 export const data = new SlashCommandBuilder()
   .setName('duels')
@@ -11,43 +15,31 @@ export const data = new SlashCommandBuilder()
 
 export async function execute(interaction) {
   const username = interaction.options.getString('username');
-  const apiKey = process.env.HYPIXEL_API_KEY;
+  const { profile, player } = await requirePlayer(username);
 
-  try {
-    const mojangRes = await fetch(`https://api.mojang.com/users/profiles/minecraft/${username}`);
-    if (!mojangRes.ok) return interaction.reply({ content: `No user found with username: ${username}`, ephemeral: true });
-    const mojangData = await mojangRes.json();
-    const uuid = mojangData.id;
+  const stats = player.stats?.Duels;
+  if (!stats) throw new UserError(`**${profile.name}** has never played Duels.`);
 
-    const hypixelRes = await fetch(`https://api.hypixel.net/player?key=${apiKey}&uuid=${uuid}`);
-    if (!hypixelRes.ok) return interaction.reply({ content: 'Failed to fetch Hypixel data.', ephemeral: true });
-    const hypixelData = await hypixelRes.json();
+  const wins = stats.wins ?? 0;
+  const losses = stats.losses ?? 0;
+  const kills = stats.kills ?? 0;
+  const deaths = stats.deaths ?? 0;
 
-    if (!hypixelData.player) return interaction.reply({ content: 'No Hypixel player data found.', ephemeral: true });
+  const embed = new EmbedBuilder()
+    .setTitle(`Duels stats for ${profile.name}`)
+    .setColor(0x36056E)
+    .setThumbnail(`https://mc-heads.net/avatar/${profile.uuid}/64`)
+    .addFields(
+      { name: 'Wins', value: count(wins), inline: true },
+      { name: 'Losses', value: count(losses), inline: true },
+      { name: 'W/L', value: ratio(wins, losses), inline: true },
+      { name: 'Kills', value: count(kills), inline: true },
+      { name: 'Deaths', value: count(deaths), inline: true },
+      { name: 'K/D', value: ratio(kills, deaths), inline: true },
+      { name: 'Best Win Streak', value: count(stats.best_overall_winstreak), inline: true },
+      { name: 'Current Streak', value: count(stats.current_winstreak), inline: true },
+    )
+    .setTimestamp();
 
-    const duelsStats = hypixelData.player.stats?.Duels;
-    if (!duelsStats) return interaction.reply({ content: 'No Duels stats found for this player.', ephemeral: true });
-
-    const wins = duelsStats.wins || 0;
-    const losses = duelsStats.losses || 0;
-    const kills = duelsStats.kills || 0;
-    const deaths = duelsStats.deaths || 0;
-
-    const embed = new EmbedBuilder()
-      .setTitle(`Duels Stats for ${username}`)
-      .setColor(0x36056E)
-      .addFields(
-        { name: 'Wins', value: wins.toString(), inline: true },
-        { name: 'Losses', value: losses.toString(), inline: true },
-        { name: 'Kills', value: kills.toString(), inline: true },
-        { name: 'Deaths', value: deaths.toString(), inline: true }
-      )
-      .setTimestamp();
-
-    await interaction.reply({ embeds: [embed] });
-
-  } catch (error) {
-    console.error(error);
-    await interaction.reply({ content: 'Error fetching Duels stats.', ephemeral: true });
-  }
+  await respond(interaction, { embeds: [embed] });
 }

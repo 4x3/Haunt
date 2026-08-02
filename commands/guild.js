@@ -1,5 +1,10 @@
 import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
-import fetch from 'node-fetch';
+
+import { UserError } from '../lib/errors.js';
+import { count, discordDate } from '../lib/format.js';
+import { getGuildByPlayer } from '../lib/hypixel.js';
+import { resolveProfile, fetchUsername } from '../lib/mojang.js';
+import { respond } from '../lib/respond.js';
 
 export const data = new SlashCommandBuilder()
   .setName('guild')
@@ -9,54 +14,55 @@ export const data = new SlashCommandBuilder()
       .setDescription('Minecraft username')
       .setRequired(true));
 
+const TOP_MEMBERS = 5;
+
+function weeklyGexp(member) {
+  return Object.values(member.expHistory ?? {}).reduce((total, xp) => total + xp, 0);
+}
+
 export async function execute(interaction) {
   const username = interaction.options.getString('username');
-  const apiKey = process.env.HYPIXEL_API_KEY;
+  const profile = await resolveProfile(username);
 
-  try {
-    // Get UUID from Mojang API
-    const mojangRes = await fetch(`https://api.mojang.com/users/profiles/minecraft/${username}`);
-    if (!mojangRes.ok) return interaction.reply({ content: `No user found with username: ${username}`, ephemeral: true });
-    const mojangData = await mojangRes.json();
-    const uuid = mojangData.id;
+  const guild = await getGuildByPlayer(profile.uuid);
+  if (!guild) throw new UserError(`**${profile.name}** is not in a guild.`);
 
-    // Fetch Hypixel guild info using player UUID
-    const guildRes = await fetch(`https://api.hypixel.net/guild?key=${apiKey}&player=${uuid}`);
-    if (!guildRes.ok) return interaction.reply({ content: 'Failed to fetch Hypixel guild data.', ephemeral: true });
-    const guildData = await guildRes.json();
+  const members = guild.members ?? [];
+  const topContributors = [...members]
+    .sort((a, b) => weeklyGexp(b) - weeklyGexp(a))
+    .slice(0, TOP_MEMBERS);
 
-    if (!guildData.guild) return interaction.reply({ content: `${username} is not in a guild.`, ephemeral: true });
+  // Hypixel only returns UUIDs, so names come from Mojang. Fetched together
+  // rather than in sequence to keep this inside the interaction window.
+  const names = await Promise.all(
+    topContributors.map(member => fetchUsername(member.uuid)),
+  );
 
-    const guild = guildData.guild;
-    const guildName = guild.name || 'Unknown';
-    const guildTag = guild.tag ? `[${guild.tag}]` : '';
-    const created = guild.created ? new Date(guild.created).toLocaleDateString() : 'Unknown';
-    const description = guild.description || 'No description';
-    const memberCount = guild.members ? guild.members.length : 0;
+  const topList = topContributors
+    .map((member, i) => {
+      const name = names[i] ?? 'Unknown player';
+      return `**${name}** — ${weeklyGexp(member).toLocaleString()} GEXP (${member.rank})`;
+    })
+    .join('\n');
 
-    // Optional: sort members by guild rank or joined date
-    // For now just show top 5 members with their rank
-    const membersList = guild.members
-      .slice(0, 5)
-      .map(m => `${m.rank} - <@${m.uuid}>`)
-      .join('\n') || 'No members listed';
+  const tag = guild.tag ? `[${guild.tag}] ` : '';
 
-    const embed = new EmbedBuilder()
-      .setTitle(`Guild Info for ${username}`)
-      .setColor(0x36056E)
-      .addFields(
-        { name: 'Guild Name', value: `${guildTag} ${guildName}`, inline: true },
-        { name: 'Created', value: created, inline: true },
-        { name: 'Members', value: memberCount.toString(), inline: true },
-        { name: 'Description', value: description },
-        { name: 'Top Members', value: membersList }
-      )
-      .setTimestamp();
+  const embed = new EmbedBuilder()
+    .setTitle(`${tag}${guild.name}`)
+    .setColor(0x36056E)
+    .addFields(
+      { name: 'Members', value: `${members.length}/125`, inline: true },
+      { name: 'Total GEXP', value: count(guild.exp), inline: true },
+      { name: 'Created', value: discordDate(guild.created), inline: true },
+    )
+    .setTimestamp();
 
-    await interaction.reply({ embeds: [embed] });
-
-  } catch (error) {
-    console.error(error);
-    await interaction.reply({ content: 'Error fetching guild info.', ephemeral: true });
+  if (guild.description) {
+    embed.setDescription(guild.description);
   }
+  if (topList) {
+    embed.addFields({ name: 'Top weekly contributors', value: topList });
+  }
+
+  await respond(interaction, { embeds: [embed] });
 }
