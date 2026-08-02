@@ -34,7 +34,7 @@ lib/        all API and data logic
   players.js    username/UUID resolution via PlayerDB
   games.js      per-gamemode stat extraction
   auctions.js   lowest-BIN index over the auction house
-  renders.js    skin render URL builders (Minotar)
+  renders.js    skin render URL builders (Crafthead)
   links.js      Discord to Minecraft account store
 ```
 
@@ -79,7 +79,7 @@ Push the command definitions to Discord. Re-run this whenever a command's name, 
 * Hypixel authenticates with an `API-Key` header. The old `?key=` query parameter is no longer accepted and returns `400` even with a valid key.
 * Everything under `/resources` plus the SkyBlock bazaar, auctions, news and fire sale endpoints are open and need no key, so those commands work before you configure one.
 * Responses are cached briefly in-process and identical in-flight requests are shared, which keeps the bot well inside its rate limit.
-* Names and UUIDs come from [PlayerDB](https://playerdb.co); skin renders come from [Minotar](https://minotar.net). The bot never downloads a render itself, it just puts the URL in the embed and lets Discord fetch it. Every render URL is built in `lib/renders.js`, so switching provider is a one-file change.
+* Names and UUIDs come from [PlayerDB](https://playerdb.co); skin renders come from [Crafthead](https://crafthead.net). The bot never downloads a render itself, it just puts the URL in the embed and lets Discord fetch it. Every render URL is built in `lib/renders.js`, so switching provider is a one-file change.
 
 ---
 *Disclaimer: Haunt is an independent, open-source project and is not officially affiliated with, maintained, or endorsed by Hypixel Inc. or Mojang AB.*
