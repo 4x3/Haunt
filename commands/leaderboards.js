@@ -69,10 +69,12 @@ export async function execute(interaction) {
       ? names.map((name, i) => `${i + 1}. ${name ?? 'Unknown'}`).join('\n')
       : 'No entries';
 
+    // `location` looks tempting but it's the coordinates of the leaderboard
+    // block in the lobby, and it's "0,0,0" on every board anyway.
     const title = stripColors(board.prefix ? `${board.prefix} ${board.title}` : board.title);
 
     embed.addFields({
-      name: `${title ?? titleCase(board.path)} (${titleCase(board.location ?? 'overall')})`,
+      name: title ?? titleCase(board.path),
       value: list,
       inline: true,
     });

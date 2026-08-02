@@ -4,6 +4,7 @@ import {
   ActionRowBuilder,
   StringSelectMenuBuilder,
   ComponentType,
+  MessageFlags,
 } from 'discord.js';
 
 import { GAMES, gameChoices, getGame } from '../lib/games.js';
@@ -89,7 +90,7 @@ export async function execute(interaction) {
     if (selection.user.id !== interaction.user.id) {
       await selection.reply({
         content: 'Run `/game` yourself to browse someone\'s stats.',
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
       return;
     }
