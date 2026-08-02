@@ -1,7 +1,7 @@
 {
   "name": "haunt",
   "version": "1.0.0",
-  "description": "An open-source Discord bot delivering Minecraft and Hypixel network statistics.",
+  "description": "An open-source Discord bot delivering Minecraft, Hypixel and SkyBlock statistics.",
   "type": "module",
   "main": "index.js",
   "engines": {

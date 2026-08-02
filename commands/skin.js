@@ -1,33 +1,27 @@
 import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 
-import { fetchSkinModel, resolveProfile } from '../lib/mojang.js';
+import { bodyRender, skinFile } from '../lib/renders.js';
 import { respond } from '../lib/respond.js';
+import { resolveTarget } from '../lib/target.js';
 
 export const data = new SlashCommandBuilder()
   .setName('skin')
-  .setDescription('Get the Minecraft skin for a username')
+  .setDescription('Show a player\'s Minecraft skin')
   .addStringOption(option =>
     option.setName('username')
-      .setDescription('Minecraft username')
-      .setRequired(true));
+      .setDescription('Minecraft username (defaults to your linked account)')
+      .setRequired(false));
 
 export async function execute(interaction) {
-  const username = interaction.options.getString('username');
-  const profile = await resolveProfile(username);
-  const model = await fetchSkinModel(profile.uuid);
+  const profile = await resolveTarget(interaction);
 
-  // Rendered by UUID so a name change can't serve a stale skin.
   const embed = new EmbedBuilder()
-    .setTitle(`Skin for ${profile.name}`)
+    .setTitle(`${profile.name}'s skin`)
     .setColor(0x36056E)
-    .setImage(`https://mc-heads.net/body/${profile.uuid}/250`)
+    .setImage(bodyRender(profile.uuidDashed))
     .addFields(
-      { name: 'Model', value: model === 'slim' ? 'Slim' : 'Classic', inline: true },
-      {
-        name: 'Download',
-        value: `[Skin file](https://mc-heads.net/download/${profile.uuid})`,
-        inline: true,
-      },
+      { name: 'Model', value: profile.skinModel === 'slim' ? 'Slim (Alex)' : 'Classic (Steve)', inline: true },
+      { name: 'Download', value: `[Skin file](${skinFile(profile.uuidDashed)})`, inline: true },
     )
     .setTimestamp();
 

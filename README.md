@@ -1,40 +1,61 @@
 # Haunt | Hypixel Utility Discord Bot
 
-Haunt is a feature-rich, open-source Discord bot tailored specifically for the Minecraft community. Built with Node.js, it interfaces with the Hypixel API and Mojang API to provide users with real-time statistics, player data, and account utilities natively within Discord. 
+Haunt is a feature-rich, open-source Discord bot tailored specifically for the Minecraft community. Built with Node.js, it interfaces with the Hypixel Public API to provide real-time statistics, player data, and account utilities natively within Discord.
 
 ## Features
 
-* **In-Depth Minigame Statistics:** Instantly fetch and display detailed player metrics for popular Hypixel gamemodes, including Bedwars, Skywars, and Duels.
-* **Comprehensive Player Profiles:** Retrieve overall Hypixel network levels, active guild affiliations, and UUID conversions.
-* **Cosmetics & Visual Rendering:** Generate and display high-quality renders of player skins and associated capes directly in the chat.
-* **Account Integration:** Allow users to seamlessly link their Minecraft accounts to their Discord profiles for streamlined command usage.
-* **Server Utilities:** Ping independent Minecraft servers for real-time status updates and monitor bot/API latency.
+* **Every gamemode, one command:** `/game` covers 22 gamemodes - Bed Wars, SkyWars, Duels, Murder Mystery, Build Battle, Wool Wars, The Pit, Mega Walls, UHC, Cops and Crims, Warlords and more - with a dropdown to switch between them without re-running anything.
+* **Live network data:** See whether someone is online and what map they're on, browse their recent games, check live player counts, active boosters, leaderboards, and Watchdog ban statistics.
+* **SkyBlock tooling:** Bazaar prices with spreads and volume, lowest Buy-It-Now lookups across the whole auction house, mayor elections, patch notes, and per-profile skill and slayer summaries.
+* **Guild insight:** Guild overview with level and weekly GEXP, plus a full weekly contribution leaderboard.
+* **Account linking:** Link once with `/link` and every stats command defaults to your own account, so `/stats` on its own just works.
+* **Cosmetics:** Skin renders, skin model detection, and both Minecraft and OptiFine capes.
 
-## Command Modules
+## Commands
 
-Haunt's architecture is modularized into specific command files for rapid execution and easy expansion:
-* `bedwars`, `skywars`, `duels` - Gamemode-specific analytics.
-* `profile`, `level`, `guild` - General Hypixel network data.
-* `skin`, `capes`, `uuid` - Mojang account data and visual renders.
-* `link` - Discord-to-Minecraft account binding.
-* `server`, `ping`, `help`, `invite` - Core bot utilities.
+| Group | Commands |
+| --- | --- |
+| Player stats | `/stats` `/game` `/status` `/recentgames` |
+| Guilds | `/guild` `/guildtop` |
+| SkyBlock | `/skyblock` `/bazaar` `/lowestbin` `/election` `/sbnews` `/firesales` |
+| Network | `/counts` `/boosters` `/punishments` `/leaderboards` |
+| Minecraft | `/skin` `/capes` `/uuid` `/server` |
+| Account | `/link` `/unlink` `/whois` |
+| Bot | `/ping` `/invite` `/help` |
+
+Most player commands take an optional username and fall back to your linked account when you leave it out.
+
+## Project layout
+
+```
+commands/   one file per slash command, kept thin
+lib/        all API and data logic
+  hypixel.js    Hypixel v2 client: header auth, caching, rate limit handling
+  players.js    username/UUID resolution via PlayerDB
+  games.js      per-gamemode stat extraction
+  auctions.js   lowest-BIN index over the auction house
+  renders.js    Crafatar URL builders
+  links.js      Discord to Minecraft account store
+```
 
 ## Prerequisites
 
 * Node.js v18 or higher (the bot uses the built-in `fetch`)
-* Discord Bot Token and Application ID (via Discord Developer Portal)
-* Hypixel API Key (Generated in-game via `/api new`)
+* Discord Bot Token and Application ID from the [Discord Developer Portal](https://discord.com/developers/applications)
+* Hypixel API key from the [Hypixel Developer Dashboard](https://developer.hypixel.net)
+
+> The old in-game `/api new` command no longer issues keys. You now register an application on the developer dashboard and take the key from there.
 
 ## Installation & Configuration
 
 ### 1. Clone & Install Dependencies
-Clone the repository to your local machine or host, then install the required Node packages:
 
-    git clone https://github.com/4x3/haunt.git
-    cd haunt
+    git clone https://github.com/4x3/Haunt.git
+    cd Haunt
     npm install
 
 ### 2. Environment Setup
+
 Copy `.env.example` to `.env` and fill in your credentials. Never commit the `.env` file:
 
     DISCORD_TOKEN=your_discord_bot_token_here
@@ -44,14 +65,20 @@ Copy `.env.example` to `.env` and fill in your credentials. Never commit the `.e
 Optionally set `GUILD_ID` to a server ID to register commands there instantly while developing.
 
 ### 3. Register Slash Commands
+
 Push the command definitions to Discord. Re-run this whenever a command's name, description, or options change:
 
     npm run deploy
 
-### 4. Initialization
-Once your environment is configured and dependencies are installed, start the bot:
+### 4. Run
 
     npm start
+
+## Notes on the API
+
+* Hypixel authenticates with an `API-Key` header. The old `?key=` query parameter is no longer accepted and returns `400` even with a valid key.
+* Everything under `/resources` plus the SkyBlock bazaar, auctions, news and fire sale endpoints are open and need no key, so those commands work before you configure one.
+* Responses are cached briefly in-process and identical in-flight requests are shared, which keeps the bot well inside its rate limit.
 
 ---
 *Disclaimer: Haunt is an independent, open-source project and is not officially affiliated with, maintained, or endorsed by Hypixel Inc. or Mojang AB.*

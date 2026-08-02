@@ -4,28 +4,25 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import {
+  ActivityType,
   Client,
   Collection,
   Events,
   GatewayIntentBits,
-  ActivityType,
   MessageFlags,
 } from 'discord.js';
 
 import { UserError } from './lib/errors.js';
 import { respondError } from './lib/respond.js';
+import { warmGameNames } from './lib/gamenames.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
-
 client.commands = new Collection();
 
 const commandsPath = path.join(__dirname, 'commands');
-const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
-
-for (const file of commandFiles) {
+for (const file of fs.readdirSync(commandsPath).filter(f => f.endsWith('.js'))) {
   const command = await import(`./commands/${file}`);
   client.commands.set(command.data.name, command);
 }
@@ -34,17 +31,22 @@ function currentActivities() {
   const members = client.guilds.cache.reduce((total, guild) => total + guild.memberCount, 0);
   return [
     { name: `${client.guilds.cache.size} servers`, type: ActivityType.Watching },
-    { name: `${members.toLocaleString()} players`, type: ActivityType.Watching },
+    { name: `${members.toLocaleString('en-US')} players`, type: ActivityType.Watching },
+    { name: 'Hypixel stats', type: ActivityType.Watching },
   ];
 }
 
 client.once(Events.ClientReady, () => {
-  console.log(`Logged in as ${client.user.tag}`);
+  console.log(`Logged in as ${client.user.tag} (${client.commands.size} commands)`);
   client.user.setStatus('online');
+
+  // Pull the game name table up front so the first /counts isn't slower than
+  // the rest. Failure is fine - it retries on demand.
+  warmGameNames();
 
   let index = 0;
   const rotate = () => {
-    // Rebuilt every tick so the counts track joins and leaves.
+    // Rebuilt each tick so the counts follow joins and leaves.
     const activities = currentActivities();
     const activity = activities[index % activities.length];
     client.user.setActivity(activity.name, { type: activity.type });
@@ -56,18 +58,27 @@ client.once(Events.ClientReady, () => {
 });
 
 client.on(Events.InteractionCreate, async interaction => {
-  if (!interaction.isChatInputCommand()) return;
-
   const command = client.commands.get(interaction.commandName);
   if (!command) return;
 
+  if (interaction.isAutocomplete()) {
+    // Discord gives autocomplete a hard 3 second budget and there's no way to
+    // surface an error, so a failure just means no suggestions.
+    try {
+      await command.autocomplete?.(interaction);
+    } catch (error) {
+      console.error(`autocomplete for /${interaction.commandName} failed:`, error);
+    }
+    return;
+  }
+
+  if (!interaction.isChatInputCommand()) return;
+
   try {
-    // Defer up front so slow upstream APIs can't blow the 3 second deadline.
-    // Commands that must own their first reply opt out with `defer = false`.
+    // Defer first so a slow upstream API can't blow the 3 second deadline.
+    // Commands that need to own their first reply set `defer = false`.
     if (command.defer !== false) {
-      await interaction.deferReply(
-        command.ephemeral ? { flags: MessageFlags.Ephemeral } : {},
-      );
+      await interaction.deferReply(command.ephemeral ? { flags: MessageFlags.Ephemeral } : {});
     }
     await command.execute(interaction);
   } catch (error) {

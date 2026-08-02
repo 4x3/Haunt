@@ -1,25 +1,30 @@
 import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 
-import { resolveProfile } from '../lib/mojang.js';
+import { headRender } from '../lib/renders.js';
 import { respond } from '../lib/respond.js';
+import { resolveTarget } from '../lib/target.js';
 
 export const data = new SlashCommandBuilder()
   .setName('capes')
-  .setDescription('Show Minecraft capes for a username')
+  .setDescription('Show the capes a player owns')
   .addStringOption(option =>
     option.setName('username')
-      .setDescription('Minecraft username')
-      .setRequired(true));
+      .setDescription('Minecraft username (defaults to your linked account)')
+      .setRequired(false));
 
-// OptiFine keys capes by username. Mojang's old capes.minecraft.net host was
-// retired and its domain no longer resolves, so there is no Java cape source.
-function optifineCapeUrl(username) {
-  return `https://optifine.net/capes/${username}.png`;
-}
-
+/*
+ * Cape sources worth knowing about:
+ *
+ *  - Official Mojang capes (MineCon, Migrator, ...) come straight out of the
+ *    profile texture blob, which PlayerDB already gives us. This used to be
+ *    broken because the old code hit capes.minecraft.net, a host that was
+ *    retired years ago and no longer resolves at all.
+ *  - OptiFine capes are keyed by username, not UUID. Getting that wrong means
+ *    every lookup silently 404s and reports "no cape".
+ */
 async function hasOptifineCape(username) {
   try {
-    const res = await fetch(optifineCapeUrl(username), {
+    const res = await fetch(`https://optifine.net/capes/${username}.png`, {
       signal: AbortSignal.timeout(5000),
     });
     return res.ok && res.headers.get('content-type')?.startsWith('image/');
@@ -29,22 +34,34 @@ async function hasOptifineCape(username) {
 }
 
 export async function execute(interaction) {
-  const username = interaction.options.getString('username');
-  const profile = await resolveProfile(username);
-
+  const profile = await resolveTarget(interaction);
   const optifine = await hasOptifineCape(profile.name);
 
   const embed = new EmbedBuilder()
-    .setTitle(`Capes for ${profile.name}`)
+    .setTitle(`${profile.name}'s capes`)
     .setColor(0x36056E)
-    .addFields({
-      name: 'OptiFine',
-      value: optifine ? `[View cape](${optifineCapeUrl(profile.name)})` : 'None',
-    })
-    .setFooter({ text: `Requested by ${interaction.user.username}` })
+    .setThumbnail(headRender(profile.uuidDashed))
+    .addFields(
+      {
+        name: 'Minecraft cape',
+        value: profile.capeTexture ? `[View](${profile.capeTexture})` : 'None',
+        inline: true,
+      },
+      {
+        name: 'OptiFine cape',
+        value: optifine ? `[View](https://optifine.net/capes/${profile.name}.png)` : 'None',
+        inline: true,
+      },
+    )
     .setTimestamp();
 
-  if (optifine) embed.setImage(optifineCapeUrl(profile.name));
+  // Prefer showing the official cape since it's the rarer one.
+  const preview = profile.capeTexture ?? (optifine ? `https://optifine.net/capes/${profile.name}.png` : null);
+  if (preview) embed.setImage(preview);
+
+  if (!profile.capeTexture && !optifine) {
+    embed.setDescription('No capes found on this account.');
+  }
 
   await respond(interaction, { embeds: [embed] });
 }
